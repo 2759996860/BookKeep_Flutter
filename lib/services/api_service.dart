@@ -812,4 +812,116 @@ class ApiService {
       rethrow;
     }
   }
+
+  /// 获取用户信息
+  static Future<UserInfo> getUserInfo() async {
+    try {
+      final url = '$baseUrl/user/getUserInfo';
+      print('正在请求获取用户信息接口: $url');
+
+      final response = await _executeWithAuthRetry(() async {
+        final headers = await getAuthHeaders();
+        return await http
+            .post(
+              Uri.parse(url),
+              headers: headers,
+            )
+            .timeout(const Duration(seconds: 30));
+      });
+
+      print('响应状态码: ${response.statusCode}');
+      print('响应内容: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body);
+        final authResponse = AuthResponse.fromJson(jsonResponse);
+
+        if (authResponse.code == 200 && authResponse.data != null) {
+          return UserInfo.fromJson(authResponse.data);
+        } else {
+          throw Exception(authResponse.message);
+        }
+      } else {
+        throw Exception('获取用户信息失败: ${response.reasonPhrase}');
+      }
+    } catch (e) {
+      print('获取用户信息异常: $e');
+      rethrow;
+    }
+  }
+
+  /// 更新用户信息
+  static Future<void> updateUserInfo(UpdateUserInfoRequest request) async {
+    try {
+      final url = '$baseUrl/user/updateUserInfo';
+      print('正在请求更新用户信息接口: $url');
+      print('请求数据: ${jsonEncode(request.toJson())}');
+
+      final response = await _executeWithAuthRetry(() async {
+        final headers = await getAuthHeaders();
+        headers['Content-Type'] = 'application/json';
+        return await http
+            .post(
+              Uri.parse(url),
+              headers: headers,
+              body: jsonEncode(request.toJson()),
+            )
+            .timeout(const Duration(seconds: 30));
+      });
+
+      print('响应状态码: ${response.statusCode}');
+      print('响应内容: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body);
+        final authResponse = AuthResponse.fromJson(jsonResponse);
+
+        if (authResponse.code != 200) {
+          throw Exception(authResponse.message);
+        }
+      } else {
+        throw Exception('更新用户信息失败: ${response.reasonPhrase}');
+      }
+    } catch (e) {
+      print('更新用户信息异常: $e');
+      rethrow;
+    }
+  }
+
+  /// 用户登出
+  static Future<void> logout() async {
+    try {
+      final url = '$baseUrl/user/logout';
+      print('正在请求登出接口: $url');
+
+      final response = await _executeWithAuthRetry(() async {
+        final headers = await getAuthHeaders();
+        return await http
+            .post(
+              Uri.parse(url),
+              headers: headers,
+            )
+            .timeout(const Duration(seconds: 30));
+      });
+
+      print('响应状态码: ${response.statusCode}');
+      print('响应内容: ${response.body}');
+
+      // 无论成功失败，都清除本地token
+      await clearTokens();
+
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body);
+        final authResponse = AuthResponse.fromJson(jsonResponse);
+
+        if (authResponse.code != 200) {
+          print('登出接口返回错误: ${authResponse.message}');
+        }
+      }
+    } catch (e) {
+      print('登出异常: $e');
+      // 即使出错也要清除本地token
+      await clearTokens();
+    }
+  }
 }

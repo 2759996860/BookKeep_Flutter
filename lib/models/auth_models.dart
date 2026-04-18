@@ -54,10 +54,77 @@ class AuthResponse {
 
   factory AuthResponse.fromJson(Map<String, dynamic> json) {
     return AuthResponse(
-      code: json['code'],
-      message: json['message'],
+      code: json['code'] ?? 0,
+      message: json['message'] ?? '',
       data: json['data'],
     );
+  }
+}
+
+// 用户信息模型
+class UserInfo {
+  final String userId;
+  final String userName;
+  final String? email;
+  final String? phone;
+  final String? icon;
+
+  UserInfo({
+    required this.userId,
+    required this.userName,
+    this.email,
+    this.phone,
+    this.icon,
+  });
+
+  factory UserInfo.fromJson(Map<String, dynamic> json) {
+    return UserInfo(
+      userId: json['userId'] ?? '',
+      userName: json['userName'] ?? '',
+      email: json['email'],
+      phone: json['phone'],
+      icon: json['icon'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'userId': userId,
+      'userName': userName,
+      if (email != null) 'email': email,
+      if (phone != null) 'phone': phone,
+      if (icon != null) 'icon': icon,
+    };
+  }
+}
+
+// 更新用户信息请求
+class UpdateUserInfoRequest {
+  final String? userName;
+  final String? email;
+  final String? phone;
+  final String? icon;
+  final String? oldPassword;
+  final String? newPassword;
+
+  UpdateUserInfoRequest({
+    this.userName,
+    this.email,
+    this.phone,
+    this.icon,
+    this.oldPassword,
+    this.newPassword,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      if (userName != null) 'userName': userName,
+      if (email != null) 'email': email,
+      if (phone != null) 'phone': phone,
+      if (icon != null) 'icon': icon,
+      if (oldPassword != null) 'oldPassword': oldPassword,
+      if (newPassword != null) 'newPassword': newPassword,
+    };
   }
 }
 

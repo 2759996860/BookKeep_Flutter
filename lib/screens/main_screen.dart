@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'home_page.dart';
 import 'chat_page.dart';
+import 'profile_page.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -10,7 +11,7 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateMixin {
-  int _currentIndex = 0; // 0: AI聊天, 1: 账单
+  int _currentIndex = 0; // 0: AI聊天, 1: 账单, 2: 我
   
   // ✅ 添加动画控制器用于Tab切换动画
   late AnimationController _animationController;
@@ -40,6 +41,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     _pages.addAll([
       const ChatPage(),
       HomePage(billRefreshSignal: _billRefreshSignal),
+      const ProfilePage(),
     ]);
   }
   
@@ -101,6 +103,11 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
             icon: Icon(Icons.account_balance_wallet_outlined),
             activeIcon: Icon(Icons.account_balance_wallet),
             label: '账单',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
+            label: '我',
           ),
         ],
       ),
