@@ -1,0 +1,561 @@
+import 'package:flutter/material.dart';
+import '../models/auth_models.dart';
+import '../services/api_service.dart';
+import '../utils/validator.dart';
+
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
+
+  @override
+  State<RegisterScreen> createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProviderStateMixin {
+  final _formKey = GlobalKey<FormState>();
+  final _userIdController = TextEditingController();
+  final _userNameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+  bool _isLoading = false;
+  bool _isSuccess = false; // ✅ 添加注册成功状态
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+    
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic));
+    
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _userIdController.dispose();
+    _userNameController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleRegister() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final request = RegisterRequest(
+        userId: _userIdController.text.trim(),
+        userName: _userNameController.text.trim(),
+        password: _passwordController.text,
+        email: _emailController.text.trim().isNotEmpty
+            ? _emailController.text.trim()
+            : null,
+        phone: _phoneController.text.trim().isNotEmpty
+            ? _phoneController.text.trim()
+            : null,
+      );
+
+      final response = await ApiService.register(request);
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (response.code == 200) {
+        // 注册成功，显示提示并返回登录页
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('注册成功！请登录'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        
+        // ✅ 设置成功状态，禁用按钮
+        setState(() {
+          _isSuccess = true;
+        });
+        
+        // ✅ 延迟一下再返回，让用户看到成功提示
+        await Future.delayed(const Duration(milliseconds: 1500));
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response.message),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF9FAFB), // 极淡灰背景
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFFE0F2F1), // 极淡青
+              const Color(0xFFEDE7F6), // 极淡紫
+              const Color(0xFFF9FAFB), // 极淡灰
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              // 可爱装饰图案 - 圆形气泡
+              Positioned(
+                top: -80,
+                right: -60,
+                child: Container(
+                  width: 200,
+                  height: 200,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.3),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 100,
+                left: -40,
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.25),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: -60,
+                right: -40,
+                child: Container(
+                  width: 150,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.2),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 100,
+                left: -50,
+                child: Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.15),
+                  ),
+                ),
+              ),
+              
+              // 主内容
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(20.0),
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: Card(
+                      elevation: 12,
+                      shadowColor: const Color(0xFF80CBC4).withOpacity(0.15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 500),
+                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(28),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.white,
+                              const Color(0xFFFAFCFB),
+                            ],
+                          ),
+                        ),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // 返回按钮
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: InkWell(
+                                  onTap: () => Navigator.pop(context),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(6),
+                                    child: Icon(Icons.arrow_back_rounded, color: const Color(0xFF80CBC4), size: 20),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              
+                              // Logo和标题
+                              Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      const Color(0xFF80CBC4),
+                                      const Color(0xFFB39DDB),
+                                    ],
+                                  ),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF80CBC4).withOpacity(0.2),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.person_add_alt_1_rounded,
+                                  size: 36,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              
+                              const Text(
+                                '创建新账户',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF5A7D7C),
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '填写信息完成注册',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+
+                              // 用户ID
+                              _buildInputField(
+                                controller: _userIdController,
+                                label: '用户ID',
+                                hint: '2-20位字母数字',
+                                icon: Icons.person_outline_rounded,
+                                validator: Validator.validateUserId,
+                                textInputAction: TextInputAction.next,
+                              ),
+                              const SizedBox(height: 8),
+
+                              // 用户名
+                              _buildInputField(
+                                controller: _userNameController,
+                                label: '用户名',
+                                hint: '2-20位字符',
+                                icon: Icons.badge_outlined,
+                                validator: Validator.validateUserName,
+                                textInputAction: TextInputAction.next,
+                              ),
+                              const SizedBox(height: 8),
+
+                              // 密码
+                              _buildInputField(
+                                controller: _passwordController,
+                                label: '密码',
+                                hint: '8-20位字母数字',
+                                icon: Icons.lock_outline_rounded,
+                                obscureText: _obscurePassword,
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.visibility_outlined,
+                                    color: const Color(0xFF80CBC4),
+                                    size: 18,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscurePassword = !_obscurePassword;
+                                    });
+                                  },
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                ),
+                                validator: Validator.validatePassword,
+                                textInputAction: TextInputAction.next,
+                              ),
+                              const SizedBox(height: 8),
+
+                              // 确认密码
+                              _buildInputField(
+                                controller: _confirmPasswordController,
+                                label: '确认密码',
+                                hint: '再次输入密码',
+                                icon: Icons.lock_outline_rounded,
+                                obscureText: _obscureConfirmPassword,
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscureConfirmPassword
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.visibility_outlined,
+                                    color: const Color(0xFF80CBC4),
+                                    size: 18,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscureConfirmPassword = !_obscureConfirmPassword;
+                                    });
+                                  },
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                ),
+                                validator: (value) => Validator.validateConfirmPassword(
+                                  value,
+                                  _passwordController.text,
+                                ),
+                                textInputAction: TextInputAction.next,
+                              ),
+                              const SizedBox(height: 8),
+
+                              // 邮箱和手机号并排
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildInputField(
+                                      controller: _emailController,
+                                      label: '邮箱',
+                                      hint: '选填',
+                                      icon: Icons.email_outlined,
+                                      validator: Validator.validateEmail,
+                                      keyboardType: TextInputType.emailAddress,
+                                      textInputAction: TextInputAction.next,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: _buildInputField(
+                                      controller: _phoneController,
+                                      label: '手机',
+                                      hint: '选填',
+                                      icon: Icons.phone_outlined,
+                                      validator: Validator.validatePhone,
+                                      keyboardType: TextInputType.phone,
+                                      textInputAction: TextInputAction.done,
+                                      onFieldSubmitted: (_) => _handleRegister(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+
+                              // 注册按钮
+                              SizedBox(
+                                width: double.infinity,
+                                height: 44,
+                                child: ElevatedButton(
+                                  onPressed: _isLoading ? null : _handleRegister,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF80CBC4),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shadowColor: const Color(0xFF80CBC4).withOpacity(0.2),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: _isLoading
+                                      ? const SizedBox(
+                                          height: 18,
+                                          width: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.5,
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                          ),
+                                        )
+                                      : const Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              '注 册',
+                                              style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w600,
+                                                letterSpacing: 1.5,
+                                              ),
+                                            ),
+                                            SizedBox(width: 4),
+                                            Icon(Icons.check_circle_rounded, size: 16),
+                                          ],
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+
+                              // 登录链接
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    '已有账户？',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _isSuccess ? null : () { // ✅ 注册成功后禁用
+                                      Navigator.pop(context);
+                                    },
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: Text(
+                                      '立即登录',
+                                      style: TextStyle(
+                                        color: _isSuccess ? Colors.grey : const Color(0xFF80CBC4),
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInputField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    required String? Function(String?) validator,
+    bool obscureText = false,
+    Widget? suffixIcon,
+    TextInputAction? textInputAction,
+    TextInputType? keyboardType,
+    void Function(String)? onFieldSubmitted,
+  }) {
+    return TextFormField(
+      controller: controller,
+      obscureText: obscureText,
+      style: const TextStyle(fontSize: 14),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        labelStyle: const TextStyle(fontSize: 13),
+        hintStyle: const TextStyle(fontSize: 12),
+        prefixIcon: Icon(icon, color: const Color(0xFF80CBC4), size: 18),
+        suffixIcon: suffixIcon,
+        filled: true,
+        fillColor: const Color(0xFFFAFCFB),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: const Color(0xFFD7E8E6)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: const Color(0xFFD7E8E6)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(
+            color: Color(0xFF80CBC4),
+            width: 2,
+          ),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFFF6B6B), width: 2),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFFF6B6B), width: 2),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        isDense: true,
+      ),
+      validator: validator,
+      textInputAction: textInputAction,
+      keyboardType: keyboardType,
+      onFieldSubmitted: onFieldSubmitted,
+    );
+  }
+}
