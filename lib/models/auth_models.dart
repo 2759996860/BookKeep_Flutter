@@ -1,3 +1,23 @@
+import 'package:intl/intl.dart';
+
+/// 统一的时间解析工具，处理ISO 8601格式的时区问题
+/// 返回DateTime对象，保持UTC标记
+DateTime parseDateTime(String dateTimeStr) {
+  try {
+    // 检查是否为ISO 8601格式（包含T或Z）
+    if (dateTimeStr.contains('T') || dateTimeStr.contains('Z')) {
+      final dateTime = DateTime.parse(dateTimeStr);
+      // 如果后端返回的是UTC时间（带Z或+00:00），保持UTC标记
+      return dateTime.isUtc ? dateTime : dateTime.toUtc();
+    }
+    // 标准格式，当作本地时间处理
+    return DateTime.parse(dateTimeStr);
+  } catch (e) {
+    print('解析时间失败: $e, 原始值: $dateTimeStr');
+    return DateTime.now();
+  }
+}
+
 class RegisterRequest {
   final String userId;
   final String userName;
@@ -254,8 +274,8 @@ class BillCategory {
       name: json['name'],
       type: json['type'],
       icon: json['icon'],
-      createdTime: DateTime.parse(json['createdTime']),
-      updatedTime: DateTime.parse(json['updatedTime']),
+      createdTime: parseDateTime(json['createdTime']),
+      updatedTime: parseDateTime(json['updatedTime']),
     );
   }
 
@@ -375,8 +395,8 @@ class ChatConversation {
       id: json['id'] as String,
       title: json['title'] as String,
       userId: json['userId'] as String,
-      createdTime: DateTime.parse(json['createdTime'] as String),
-      updatedTime: DateTime.parse(json['updatedTime'] as String),
+      createdTime: parseDateTime(json['createdTime'] as String),
+      updatedTime: parseDateTime(json['updatedTime'] as String),
     );
   }
 
@@ -421,8 +441,8 @@ class ChatMessage {
       messageType: json['messageType'] as String,
       content: json['content'] as String,
       sortOrder: json['sortOrder'] as int? ?? 0,
-      createdTime: DateTime.parse(json['createdTime'] as String),
-      updatedTime: DateTime.parse(json['updatedTime'] as String),
+      createdTime: parseDateTime(json['createdTime'] as String),
+      updatedTime: parseDateTime(json['updatedTime'] as String),
     );
   }
 

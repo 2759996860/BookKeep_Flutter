@@ -963,7 +963,7 @@ class _ChatPageState extends State<ChatPage> {
                                   subtitle: Padding(
                                     padding: const EdgeInsets.only(top: 4),
                                     child: Text(
-                                      DateFormat('MM-dd HH:mm').format(conversation.updatedTime),
+                                      DateFormat('MM-dd HH:mm').format(conversation.updatedTime.toLocal()),
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: isSelected

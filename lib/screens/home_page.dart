@@ -747,7 +747,17 @@ class _HomePageState extends State<HomePage> {
   Widget _buildDailyCard(String date, List<BillDetail> bills) {
     final income = _calculateDailyIncome(bills);
     final expense = _calculateDailyExpense(bills);
-    final dateTime = DateTime.parse(date);
+    
+    // 处理时区：统一处理并转换为本地时间
+    DateTime dateTime;
+    try {
+      dateTime = DateTime.parse(date);
+      // 转换为本地时间用于显示
+      dateTime = dateTime.toLocal();
+    } catch (e) {
+      dateTime = DateTime.now();
+    }
+    
     final monthDay = DateFormat('MM月dd日', 'zh_CN').format(dateTime);
     final weekDay = DateFormat('E', 'zh_CN').format(dateTime).replaceAll('星期', '');
 
@@ -1696,7 +1706,14 @@ class _EditBillDialogState extends State<EditBillDialog> {
     _selectedType = widget.bill.type;
     _selectedCategoryId = widget.bill.categoryId;
     _amountController = TextEditingController(text: widget.bill.amount.toString());
-    _selectedDate = DateTime.parse(widget.bill.recordTime);
+    // 处理时区：统一处理并转换为本地时间
+    try {
+      final dateTime = DateTime.parse(widget.bill.recordTime);
+      _selectedDate = dateTime.toLocal();
+    } catch (e) {
+      print('解析recordTime失败: $e');
+      _selectedDate = DateTime.now();
+    }
     _remarkController = TextEditingController(text: widget.bill.remark);
     _loadCategories();
   }
