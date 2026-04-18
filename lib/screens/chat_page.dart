@@ -1149,7 +1149,8 @@ class _ChatPageState extends State<ChatPage> {
                                           : Alignment.centerLeft,
                                       child: GestureDetector(
                                         onLongPress: () {
-                                          // ✅ 长按弹出菜单：复制或删除
+                                          // ✅ 添加轻微震动反馈
+                                          HapticFeedback.lightImpact();
                                           _showMessageOptions(context, message);
                                         },
                                         child: Container(
