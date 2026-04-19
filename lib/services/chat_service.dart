@@ -4,6 +4,17 @@ import '../models/auth_models.dart';
 import './api_service.dart';
 import '../config/app_config.dart';
 
+/// SSE事件类型
+enum SseEventType { content, metadata }
+
+/// SSE事件数据
+class SseEvent {
+  final SseEventType type;
+  final String data;
+
+  SseEvent({required this.type, required this.data});
+}
+
 /// AI聊天服务
 class ChatService {
   // 使用统一配置的AI聊天API地址
@@ -381,8 +392,7 @@ class ChatService {
     }
   }
 
-  /// 流式对话（SSE）
-  static Stream<String> streamChat(StreamChatRequest request) async* {
+  static Stream<SseEvent> streamChat(StreamChatRequest request) async* {
     try {
       final token = await ApiService.getAccessToken();
       if (token == null || token.isEmpty) {
@@ -410,20 +420,18 @@ class ChatService {
         throw Exception('流式对话请求失败: ${response.statusCode}');
       }
 
-      // ✅ 处理SSE流 - 增强解析逻辑，彻底去除"data:"前缀
+      // ✅ 处理SSE流 - 支持metadata事件
       StringBuffer buffer = StringBuffer();
-      int chunkCount = 0;
+      String? currentEvent; // 当前事件类型
       
       await for (final chunk in response.stream.transform(utf8.decoder)) {
-        chunkCount++;
+        print('📥 收到原始chunk: ${chunk.length} bytes');
         
         buffer.write(chunk);
         
-        // 按行分割处理
         final content = buffer.toString();
         final lines = content.split('\n');
         
-        // 保留最后一个可能不完整的行
         if (content.endsWith('\n')) {
           buffer.clear();
         } else {
@@ -432,37 +440,57 @@ class ChatService {
           lines.removeLast();
         }
         
-        for (int i = 0; i < lines.length; i++) {
-          final line = lines[i];
-          String trimmedLine = line.trim();
+        for (final line in lines) {
+          print('🔍 解析行: "$line" (长度: ${line.length})');
+          final trimmedLine = line.trim();
           
-          // 跳过空行和注释行
-          if (trimmedLine.isEmpty || trimmedLine.startsWith(':')) {
+          if (trimmedLine.isEmpty) {
+            print('   ⚪ 空行，跳过');
             continue;
           }
           
-          // ✅ 彻底清理"data:"前缀（可能有多个或嵌套）
-          while (trimmedLine.toLowerCase().startsWith('data:')) {
-            // 找到第一个冒号的位置
-            final colonIndex = trimmedLine.indexOf(':');
-            if (colonIndex >= 0) {
-              trimmedLine = trimmedLine.substring(colonIndex + 1).trim();
+          // 检查是否是event行
+          if (trimmedLine.startsWith('event:')) {
+            currentEvent = trimmedLine.substring(6).trim();
+            print('   🏷️ 检测到事件类型: $currentEvent');
+            continue;
+          }
+          
+          // 检查是否是data行
+          if (trimmedLine.startsWith('data:')) {
+            String data = trimmedLine.substring(5).trim();
+            
+            print('   📄 检测到数据行，内容长度: ${data.length}');
+            
+            // 跳过[DONE]标记
+            if (data == '[DONE]') {
+              print('   ⏹️ 检测到[DONE]标记');
+              continue;
+            }
+            
+            print('   📄 数据内容预览: ${data.length > 100 ? data.substring(0, 100) + "..." : data}');
+            print('   📄 当前事件类型: $currentEvent');
+            
+            // 如果是metadata事件，解析JSON
+            if (currentEvent == 'metadata') {
+              print('📦 收到metadata事件: $data');
+              yield SseEvent(type: SseEventType.metadata, data: data);
+              currentEvent = null; // 重置事件类型
             } else {
-              break;
+              // 普通内容
+              yield SseEvent(type: SseEventType.content, data: data);
+            }
+          } else {
+            // 不是data:开头，也不是event:开头，可能是纯文本或其他格式
+            print('   ❓ 非标准SSE格式行，尝试作为内容处理');
+            if (!trimmedLine.startsWith(':')) { // 不是注释
+              yield SseEvent(type: SseEventType.content, data: trimmedLine);
             }
           }
-          
-          // 跳过[DONE]标记
-          if (trimmedLine == '[DONE]' || trimmedLine.isEmpty) {
-            continue;
-          }
-          
-          print('[Chunk $chunkCount][Line $i] 最终数据 -> "$trimmedLine"');
-          yield trimmedLine;
         }
       }
       
-      print('流式对话结束，共处理 $chunkCount 个数据块');
+      print('✅ SSE流已结束，共处理所有chunk');
       client.close();
     } catch (e) {
       print('流式对话异常: $e');

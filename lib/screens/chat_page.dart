@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -346,9 +347,11 @@ class _ChatPageState extends State<ChatPage> {
 
       // 添加用户消息到本地
       setState(() {
+        final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+        
         // ✅ 修复：由于ListView设置了reverse: true，新消息应该插入到列表开头，这样才会显示在底部
         _messages.insert(0, ChatMessage(
-          id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+          id: tempId,
           conversationId: conversationId,
           messageType: 'user',
           content: message,
@@ -357,13 +360,8 @@ class _ChatPageState extends State<ChatPage> {
           updatedTime: DateTime.now(),
         ));
         
-        // ✅ 关键修复：发送新消息后，标记分页状态已失效
-        // 因为新增消息后，后端的分页基准点已经偏移
-        // 下次加载更多时，需要重新从第1页开始加载（但保留本地已有的最新消息）
-        _isPageStateInvalidated = true;
-        
-        print('📝 发送消息后，分页状态已标记为失效');
         print('   当前本地消息数: ${_messages.length}');
+        print('   临时消息ID: $tempId');
       });
 
       // 滚动到底部
@@ -379,37 +377,58 @@ class _ChatPageState extends State<ChatPage> {
 
       String assistantResponse = '';
       bool hasAddedAssistantMessage = false;
+      String? userMessageId;
+      String? assistantMessageId;
       
       try {
-        await for (final chunk in ChatService.streamChat(request)) {
-          // ✅ 双重清理：确保彻底去除"data:"前缀
-          String cleanChunk = chunk.trim();
-          
-          // 第一层清理：如果还包含"data: "前缀，再次去除
-          while (cleanChunk.startsWith('data: ')) {
-            cleanChunk = cleanChunk.substring(6).trim();
+        await for (final event in ChatService.streamChat(request)) {
+          // 处理metadata事件
+          if (event.type == SseEventType.metadata) {
+            try {
+              final metadata = jsonDecode(event.data);
+              userMessageId = metadata['userMessageId'];
+              assistantMessageId = metadata['assistantMessageId'];
+              print('✅ 收到消息ID - 用户: $userMessageId, AI: $assistantMessageId');
+              
+              // ✅ 如果AI消息已创建，立即更新其ID
+              if (assistantMessageId != null && hasAddedAssistantMessage && _messages.isNotEmpty) {
+                setState(() {
+                  final oldId = _messages[0].id;
+                  _messages[0] = ChatMessage(
+                    id: assistantMessageId!,
+                    conversationId: _messages[0].conversationId,
+                    messageType: _messages[0].messageType,
+                    content: _messages[0].content,
+                    sortOrder: _messages[0].sortOrder,
+                    createdTime: _messages[0].createdTime,
+                    updatedTime: _messages[0].updatedTime,
+                  );
+                  print('✅ 更新AI消息ID: $oldId -> $assistantMessageId');
+                });
+              }
+            } catch (e) {
+              print('❌ 解析metadata失败: $e');
+            }
+            continue;
           }
           
-          // 第二层清理：如果以"data:"开头（无空格），也去除
-          if (cleanChunk.startsWith('data:')) {
-            cleanChunk = cleanChunk.substring(5).trim();
+          // 只处理内容事件
+          if (event.type != SseEventType.content) {
+            continue;
           }
           
-          print('清理后的数据块: "$cleanChunk"');
+          final content = event.data;
           
-          // 跳过空数据
-          if (cleanChunk.isEmpty || cleanChunk == '[DONE]') {
+          if (content.isEmpty || content == '[DONE]') {
             continue;
           }
           
           setState(() {
-            assistantResponse += cleanChunk;
+            assistantResponse += content;
             
-            // ✅ 修复：由于ListView设置了reverse: true，新消息应该插入到列表开头
             if (!hasAddedAssistantMessage) {
-              // 第一次收到响应，插入新消息到开头（显示在底部）
               _messages.insert(0, ChatMessage(
-                id: 'assistant_${DateTime.now().millisecondsSinceEpoch}',
+                id: assistantMessageId ?? 'assistant_${DateTime.now().millisecondsSinceEpoch}',
                 conversationId: conversationId,
                 messageType: 'assistant',
                 content: assistantResponse,
@@ -417,16 +436,9 @@ class _ChatPageState extends State<ChatPage> {
                 createdTime: DateTime.now(),
                 updatedTime: DateTime.now(),
               ));
+              
               hasAddedAssistantMessage = true;
-              
-              // ✅ 关键修复：AI回复也算一条新消息，标记分页状态失效
-              _isPageStateInvalidated = true;
-              
-              print('✅ 已添加第一条助手消息');
-              print('📝 分页状态已标记为失效');
-              print('   当前本地消息数: ${_messages.length}');
             } else {
-              // 后续响应，更新第一条消息（索引0，因为是reverse: true）
               if (_messages.isNotEmpty) {
                 _messages[0] = ChatMessage(
                   id: _messages[0].id,
@@ -441,11 +453,34 @@ class _ChatPageState extends State<ChatPage> {
             }
           });
 
-          // 实时滚动
           _scrollToBottom();
         }
         
         print('流式对话完成，总长度: ${assistantResponse.length}');
+        
+        // ✅ 如果收到了用户消息ID，更新本地用户消息的ID
+        if (userMessageId != null && _messages.isNotEmpty) {
+          setState(() {
+            // 查找刚发送的用户消息（第一条，因为是reverse）
+            final userMsgIndex = _messages.indexWhere((m) => 
+              m.messageType == 'user' && m.id.startsWith('temp_')
+            );
+            
+            if (userMsgIndex != -1) {
+              final oldId = _messages[userMsgIndex].id;
+              _messages[userMsgIndex] = ChatMessage(
+                id: userMessageId!,
+                conversationId: _messages[userMsgIndex].conversationId,
+                messageType: _messages[userMsgIndex].messageType,
+                content: _messages[userMsgIndex].content,
+                sortOrder: _messages[userMsgIndex].sortOrder,
+                createdTime: _messages[userMsgIndex].createdTime,
+                updatedTime: _messages[userMsgIndex].updatedTime,
+              );
+              print('✅ 更新用户消息ID: $oldId -> $userMessageId');
+            }
+          });
+        }
       } catch (e) {
         print('流式对话异常: $e');
         _showError('AI回复失败: $e');
@@ -457,68 +492,6 @@ class _ChatPageState extends State<ChatPage> {
           });
           print('🔄 AI回复结束，已清除等待标志');
         }
-      }
-
-      // ✅ 流式对话完成后，异步重新加载消息列表以获取后端生成的真实messageId
-      // 这样可以确保删除等操作使用正确的ID
-      print('🔄 流式对话完成，开始同步真实messageId...');
-      
-      // 异步重新加载最新消息（从第1页开始），以获取后端生成的真实ID
-      if (mounted && _currentConversationId != null) {
-        // 延迟一小段时间，确保后端已完全保存消息
-        Future.delayed(const Duration(milliseconds: 500), () async {
-          if (!mounted || _currentConversationId == null) return;
-          
-          try {
-            print('📥 重新加载消息以获取真实ID...');
-            final result = await ChatService.getMessageList(
-              conversationId: _currentConversationId!,
-              pageNum: 1,
-              pageSize: 50, // 加载更多以确保包含刚发送的消息
-            );
-            
-            if (!mounted) return;
-            
-            final List<ChatMessage> freshMessages = result['messages'] as List<ChatMessage>;
-            
-            setState(() {
-              // 策略：用后端返回的真实消息替换本地临时消息
-              // 保留本地的消息顺序和内容，只更新ID为后端生成的真实ID
-              
-              print('📊 开始同步ID - 本地消息数: ${_messages.length}, 后端消息数: ${freshMessages.length}');
-              
-              // 遍历后端返回的消息，查找并更新本地对应的临时消息
-              for (var freshMsg in freshMessages) {
-                // 查找本地具有相同内容和类型的临时消息
-                final localIndex = _messages.indexWhere((m) => 
-                  m.content == freshMsg.content && 
-                  m.messageType == freshMsg.messageType &&
-                  (m.id.startsWith('temp_') || m.id.startsWith('assistant_'))
-                );
-                
-                if (localIndex != -1) {
-                  final oldId = _messages[localIndex].id;
-                  // 找到匹配的本地消息，更新其ID为后端生成的真实ID
-                  _messages[localIndex] = ChatMessage(
-                    id: freshMsg.id, // 使用后端生成的真实ID
-                    conversationId: freshMsg.conversationId,
-                    messageType: freshMsg.messageType,
-                    content: freshMsg.content,
-                    sortOrder: freshMsg.sortOrder,
-                    createdTime: freshMsg.createdTime,
-                    updatedTime: freshMsg.updatedTime,
-                  );
-                  print('✅ 更新消息ID: $oldId -> ${freshMsg.id}');
-                }
-              }
-              
-              print('✅ messageId同步完成');
-            });
-          } catch (e) {
-            print('⚠️ 同步messageId失败: $e');
-            // 同步失败不影响用户体验，只是删除时可能失败
-          }
-        });
       }
       
       // ✅ 如果是新创建的会话，异步刷新会话列表以显示新会话（不阻塞UI）
@@ -728,20 +701,24 @@ class _ChatPageState extends State<ChatPage> {
 
     if (confirmed == true && _currentConversationId != null) {
       try {
+        print('🗑️ 准备删除消息 - ID: ${message.id}, 类型: ${message.messageType}');
+        print('   内容预览: ${message.content.substring(0, message.content.length > 30 ? 30 : message.content.length)}...');
+        
+        // 调用后端删除接口
         await ChatService.deleteMessage(_currentConversationId!, message.id);
         
-        // ✅ 优化：直接从本地列表中移除，避免重新加载整个列表
+        // 从本地列表中移除
         setState(() {
           _messages.removeWhere((m) => m.id == message.id);
           _totalMessages--;
         });
         
+        print('✅ 消息删除成功');
         _showMessage('删除成功');
-        
-        print('✅ 消息删除成功，剩余消息数: ${_messages.length}');
       } catch (e) {
         print('❌ 删除消息失败: $e');
-        _showError('删除失败: $e');
+        print('   尝试删除的ID: ${message.id}');
+        _showError('删除失败');
       }
     }
   }
@@ -1255,7 +1232,6 @@ class _ChatPageState extends State<ChatPage> {
                                               maxWidth:
                                                   MediaQuery.of(context).size.width *
                                                       0.75, // ✅ 最大宽度75%
-                                              minWidth: 200, // ✅ 添加最小宽度，防止过度压缩
                                             ),
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 18,
@@ -1280,8 +1256,6 @@ class _ChatPageState extends State<ChatPage> {
                                             ),
                                             child: Text(
                                               message.content,
-                                              maxLines: 10, // ✅ 限制最大行数，防止过长
-                                              overflow: TextOverflow.ellipsis, // ✅ 超出显示省略号
                                               style: TextStyle(
                                                 color: isUser
                                                     ? Colors.white
