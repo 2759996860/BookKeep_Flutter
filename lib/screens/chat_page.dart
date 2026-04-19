@@ -53,13 +53,23 @@ class _ChatPageState extends State<ChatPage> {
         if (mounted && _scrollController.hasClients) {
           Future.delayed(const Duration(milliseconds: 100), () {
             if (mounted && _scrollController.hasClients) {
-              print('执行滚动到底部');
-              // ✅ 修复：reverse: true时，滚动到0才是底部
-              _scrollController.animateTo(
-                0,  // reverse: true时，0是底部
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-              );
+              // ✅ 关键优化：检测内容是否超出可视区域
+              final maxScroll = _scrollController.position.maxScrollExtent;
+              
+              if (maxScroll > 0) {
+                // 内容超出屏幕，滚动到底部
+                print('执行滚动到底部，maxScroll: $maxScroll');
+                _scrollController.animateTo(
+                  0,  // reverse: true时，0是底部
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                );
+              } else {
+                // 内容未超出屏幕，强制定位到顶部
+                print('ℹ️ 内容未超出屏幕，定位到顶部，maxScroll: $maxScroll');
+                _scrollController.jumpTo(maxScroll);
+              }
+              
               setState(() {
                 _shouldScrollToBottom = false;
               });
@@ -75,13 +85,25 @@ class _ChatPageState extends State<ChatPage> {
     if (_currentConversationId != null && _messages.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
-          print('执行滚动到底部，消息数: ${_messages.length}');
-          // ✅ 修复：当ListView设置reverse: true时，滚动到0才是底部（最新消息）
-          _scrollController.animateTo(
-            0,  // reverse: true时，0是底部
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-          );
+          print('执行滚动控制，消息数: ${_messages.length}');
+          
+          // ✅ 关键优化：检测内容是否超出可视区域
+          final maxScroll = _scrollController.position.maxScrollExtent;
+          
+          if (maxScroll > 0) {
+            // 内容超出可视区域，滚动到底部（reverse: true时，0是底部）
+            _scrollController.animateTo(
+              0,  // reverse: true时，0是底部
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+            );
+            print('✅ 内容超出屏幕，已滚动到底部');
+          } else {
+            // 内容未超出屏幕，强制滚动到顶部（maxScrollExtent位置）
+            // reverse: true时，maxScrollExtent是视觉顶部
+            _scrollController.jumpTo(maxScroll);
+            print('ℹ️ 内容未超出屏幕，已定位到顶部，maxScroll: $maxScroll');
+          }
         }
       });
     }
@@ -437,8 +459,67 @@ class _ChatPageState extends State<ChatPage> {
         }
       }
 
-      // ✅ 流式对话完成后，不再重新加载消息，保持流式显示的效果
-      // 只在必要时刷新会话列表
+      // ✅ 流式对话完成后，异步重新加载消息列表以获取后端生成的真实messageId
+      // 这样可以确保删除等操作使用正确的ID
+      print('🔄 流式对话完成，开始同步真实messageId...');
+      
+      // 异步重新加载最新消息（从第1页开始），以获取后端生成的真实ID
+      if (mounted && _currentConversationId != null) {
+        // 延迟一小段时间，确保后端已完全保存消息
+        Future.delayed(const Duration(milliseconds: 500), () async {
+          if (!mounted || _currentConversationId == null) return;
+          
+          try {
+            print('📥 重新加载消息以获取真实ID...');
+            final result = await ChatService.getMessageList(
+              conversationId: _currentConversationId!,
+              pageNum: 1,
+              pageSize: 50, // 加载更多以确保包含刚发送的消息
+            );
+            
+            if (!mounted) return;
+            
+            final List<ChatMessage> freshMessages = result['messages'] as List<ChatMessage>;
+            
+            setState(() {
+              // 策略：用后端返回的真实消息替换本地临时消息
+              // 保留本地的消息顺序和内容，只更新ID为后端生成的真实ID
+              
+              print('📊 开始同步ID - 本地消息数: ${_messages.length}, 后端消息数: ${freshMessages.length}');
+              
+              // 遍历后端返回的消息，查找并更新本地对应的临时消息
+              for (var freshMsg in freshMessages) {
+                // 查找本地具有相同内容和类型的临时消息
+                final localIndex = _messages.indexWhere((m) => 
+                  m.content == freshMsg.content && 
+                  m.messageType == freshMsg.messageType &&
+                  (m.id.startsWith('temp_') || m.id.startsWith('assistant_'))
+                );
+                
+                if (localIndex != -1) {
+                  final oldId = _messages[localIndex].id;
+                  // 找到匹配的本地消息，更新其ID为后端生成的真实ID
+                  _messages[localIndex] = ChatMessage(
+                    id: freshMsg.id, // 使用后端生成的真实ID
+                    conversationId: freshMsg.conversationId,
+                    messageType: freshMsg.messageType,
+                    content: freshMsg.content,
+                    sortOrder: freshMsg.sortOrder,
+                    createdTime: freshMsg.createdTime,
+                    updatedTime: freshMsg.updatedTime,
+                  );
+                  print('✅ 更新消息ID: $oldId -> ${freshMsg.id}');
+                }
+              }
+              
+              print('✅ messageId同步完成');
+            });
+          } catch (e) {
+            print('⚠️ 同步messageId失败: $e');
+            // 同步失败不影响用户体验，只是删除时可能失败
+          }
+        });
+      }
       
       // ✅ 如果是新创建的会话，异步刷新会话列表以显示新会话（不阻塞UI）
       if (_conversations.isEmpty || !_conversations.any((c) => c.id == conversationId)) {
@@ -693,16 +774,25 @@ class _ChatPageState extends State<ChatPage> {
     if (_shouldScrollToBottom && _currentConversationId != null && _messages.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients && mounted) {
-          print('build: 检测到需要滚动，消息数: ${_messages.length}');
           Future.delayed(const Duration(milliseconds: 50), () {
             if (mounted && _scrollController.hasClients) {
-              print('执行滚动到底部');
-              // ✅ 修复：reverse: true时，滚动到0才是底部
-              _scrollController.animateTo(
-                0,  // reverse: true时，0是底部
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-              );
+              // ✅ 关键优化：检测内容是否超出可视区域
+              final maxScroll = _scrollController.position.maxScrollExtent;
+              
+              if (maxScroll > 0) {
+                // 内容超出屏幕，滚动到底部
+                print('build: 执行滚动到底部，消息数: ${_messages.length}, maxScroll: $maxScroll');
+                _scrollController.animateTo(
+                  0,  // reverse: true时，0是底部
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                );
+              } else {
+                // 内容未超出屏幕，强制定位到顶部
+                print('build: 内容未超出屏幕，定位到顶部，消息数: ${_messages.length}, maxScroll: $maxScroll');
+                _scrollController.jumpTo(maxScroll);
+              }
+              
               // ✅ 滚动后重置标记
               setState(() {
                 _shouldScrollToBottom = false;
@@ -1089,117 +1179,122 @@ class _ChatPageState extends State<ChatPage> {
                           children: [
                             // 消息列表 - 占据更多空间
                             Expanded(
-                              child: NotificationListener<ScrollNotification>(
-                                onNotification: (ScrollNotification scrollInfo) {
-                                  // ✅ 修复：reverse: true时，maxScrollExtent才是顶部（旧消息端）
-                                  if (scrollInfo is ScrollEndNotification &&
-                                      scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 50 &&  // 接近顶部
-                                      _hasMoreMessages && 
-                                      !_isLoadingMore &&
-                                      _messages.isNotEmpty) {
-                                    print('📢 触发上拉加载更多 - 滚动位置: ${scrollInfo.metrics.pixels}, maxScrollExtent: ${scrollInfo.metrics.maxScrollExtent}');
-                                    _loadMoreMessages();
-                                  }
-                                  return false;
-                                },
-                                child: ListView.builder(
-                                  controller: _scrollController,
-                                  padding: const EdgeInsets.all(20), // ✅ 增加内边距
-                                  reverse: true, // ✅ 反转列表，让最新消息在底部
-                                  itemCount: _messages.length + (_isLoadingMore ? 1 : 0), // ✅ 加载更多时增加一个加载项
-                                  itemBuilder: (context, index) {
-                                    // ✅ 如果是加载项，显示加载提示
-                                    if (index == _messages.length) {
-                                      return Container(
-                                        padding: const EdgeInsets.symmetric(vertical: 16),
-                                        child: Center(
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              SizedBox(
-                                                width: 20,
-                                                height: 20,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                                    Color(0xFF80CBC4),
+                              child: Align(
+                                alignment: Alignment.topCenter, // ✅ 关键：让ListView从顶部对齐
+                                child: NotificationListener<ScrollNotification>(
+                                  onNotification: (ScrollNotification scrollInfo) {
+                                    // ✅ 修复：reverse: true时，maxScrollExtent才是顶部（旧消息端）
+                                    if (scrollInfo is ScrollEndNotification &&
+                                        scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 50 &&  // 接近顶部
+                                        _hasMoreMessages && 
+                                        !_isLoadingMore &&
+                                        _messages.isNotEmpty) {
+                                      print('📢 触发上拉加载更多 - 滚动位置: ${scrollInfo.metrics.pixels}, maxScrollExtent: ${scrollInfo.metrics.maxScrollExtent}');
+                                      _loadMoreMessages();
+                                    }
+                                    return false;
+                                  },
+                                  child: ListView.builder(
+                                    controller: _scrollController,
+                                    padding: const EdgeInsets.all(20), // ✅ 增加内边距
+                                    reverse: true, // ✅ 反转列表，让最新消息在底部
+                                    shrinkWrap: true, // ✅ 收缩包装，根据内容调整大小
+                                    physics: const BouncingScrollPhysics(), // ✅ 弹性滚动效果
+                                    itemCount: _messages.length + (_isLoadingMore ? 1 : 0), // ✅ 加载更多时增加一个加载项
+                                    itemBuilder: (context, index) {
+                                      // ✅ 如果是加载项，显示加载提示
+                                      if (index == _messages.length) {
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(vertical: 16),
+                                          child: Center(
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                                      Color(0xFF80CBC4),
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Text(
-                                                '加载中...',
-                                                style: TextStyle(
-                                                  color: Colors.grey.shade600,
-                                                  fontSize: 14,
+                                                const SizedBox(width: 12),
+                                                Text(
+                                                  '加载中...',
+                                                  style: TextStyle(
+                                                    color: Colors.grey.shade600,
+                                                    fontSize: 14,
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
-                                        ),
-                                      );
-                                    }
-                                    
-                                    final message = _messages[index];
-                                    final isUser = message.messageType == 'user';
+                                        );
+                                      }
+                                      
+                                      final message = _messages[index];
+                                      final isUser = message.messageType == 'user';
 
-                                    return Align(
-                                      alignment: isUser
-                                          ? Alignment.centerRight
-                                          : Alignment.centerLeft,
-                                      child: GestureDetector(
-                                        onLongPress: () {
-                                          // ✅ 添加轻微震动反馈
-                                          HapticFeedback.lightImpact();
-                                          _showMessageOptions(context, message);
-                                        },
-                                        child: Container(
-                                          margin: const EdgeInsets.only(
-                                            bottom: 16,
-                                          ), // ✅ 增加间距
-                                          constraints: BoxConstraints(
-                                            maxWidth:
-                                                MediaQuery.of(context).size.width *
-                                                    0.75, // ✅ 最大宽度75%
-                                            minWidth: 200, // ✅ 添加最小宽度，防止过度压缩
-                                          ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 18,
-                                            vertical: 14,
-                                          ), // ✅ 增加内边距
-                                          decoration: BoxDecoration(
-                                            color: isUser
-                                                ? const Color(0xFF80CBC4)
-                                                : Colors.grey.shade100,
-                                            borderRadius: BorderRadius.circular(
-                                              18,
-                                            ), // ✅ 增加圆角
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black.withOpacity(
-                                                  0.05,
-                                                ),
-                                                blurRadius: 8,
-                                                offset: const Offset(0, 2),
-                                              ),
-                                            ],
-                                          ),
-                                          child: Text(
-                                            message.content,
-                                            maxLines: 10, // ✅ 限制最大行数，防止过长
-                                            overflow: TextOverflow.ellipsis, // ✅ 超出显示省略号
-                                            style: TextStyle(
+                                      return Align(
+                                        alignment: isUser
+                                            ? Alignment.centerRight
+                                            : Alignment.centerLeft,
+                                        child: GestureDetector(
+                                          onLongPress: () {
+                                            // ✅ 添加轻微震动反馈
+                                            HapticFeedback.lightImpact();
+                                            _showMessageOptions(context, message);
+                                          },
+                                          child: Container(
+                                            margin: const EdgeInsets.only(
+                                              bottom: 16,
+                                            ), // ✅ 增加间距
+                                            constraints: BoxConstraints(
+                                              maxWidth:
+                                                  MediaQuery.of(context).size.width *
+                                                      0.75, // ✅ 最大宽度75%
+                                              minWidth: 200, // ✅ 添加最小宽度，防止过度压缩
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 18,
+                                              vertical: 14,
+                                            ), // ✅ 增加内边距
+                                            decoration: BoxDecoration(
                                               color: isUser
-                                                  ? Colors.white
-                                                  : Colors.black87,
-                                              fontSize: 15,
-                                              height: 1.5, // ✅ 增加行高
+                                                  ? const Color(0xFF80CBC4)
+                                                  : Colors.grey.shade100,
+                                              borderRadius: BorderRadius.circular(
+                                                18,
+                                              ), // ✅ 增加圆角
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withOpacity(
+                                                    0.05,
+                                                  ),
+                                                  blurRadius: 8,
+                                                  offset: const Offset(0, 2),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Text(
+                                              message.content,
+                                              maxLines: 10, // ✅ 限制最大行数，防止过长
+                                              overflow: TextOverflow.ellipsis, // ✅ 超出显示省略号
+                                              style: TextStyle(
+                                                color: isUser
+                                                    ? Colors.white
+                                                    : Colors.black87,
+                                                fontSize: 15,
+                                                height: 1.5, // ✅ 增加行高
+                                              ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    );
-                                  },
+                                      );
+                                    },
+                                  ),
                                 ),
                               ),
                             ),
