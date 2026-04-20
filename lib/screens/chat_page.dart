@@ -229,22 +229,17 @@ class _ChatPageState extends State<ChatPage> {
       
       // ✅ 关键修复：如果分页状态已失效（发送了新消息），需要重新从第1页加载
       int pageNumToRequest = _currentPage;
+      bool shouldReplaceAll = false; // 是否应该替换所有数据
       
       if (isLoadMore && _isPageStateInvalidated) {
-        print('⚠️ 检测到分页状态已失效，重新计算页码...');
+        print('⚠️ 检测到分页状态已失效，重新从第1页加载...');
         
-        // 策略：保留本地最新的20条消息，从后端重新加载剩余的旧消息
-        // 计算需要跳过多少条消息
-        int localMessageCount = _messages.length;
-        int skipCount = localMessageCount; // 跳过本地已有的所有消息
+        // 策略：由于本地插入了新消息，与后端分页数据不一致，必须重新加载第1页
+        pageNumToRequest = 1;
+        shouldReplaceAll = true;
         
-        // 计算应该请求的页码（假设每页20条）
-        // 例如：本地有25条，skipCount=25，应该从第2页开始（跳过前20条）
-        pageNumToRequest = (skipCount ~/ 20) + 1;
-        
-        print('   本地消息数: $localMessageCount');
-        print('   跳过数量: $skipCount');
-        print('   请求页码: $pageNumToRequest');
+        print('   当前本地消息数: ${_messages.length}');
+        print('   将重新加载第1页并替换所有数据');
         
         // 重置失效标记
         _isPageStateInvalidated = false;
@@ -270,11 +265,17 @@ class _ChatPageState extends State<ChatPage> {
       if (!mounted) return;
       
       setState(() {
-        if (isLoadMore) {
-          // ✅ 加载更多：追加到列表前端（因为是reverse: true，所以insert到开头）
-          _messages.insertAll(0, newMessages);
+        if (shouldReplaceAll) {
+          // ✅ 分页失效时：用第1页数据替换所有本地数据
+          _messages = newMessages;
+          _currentPage = 2; // 下次从第2页开始
           
-          // ✅ 关键修复：更新当前页码为实际请求的页码+1
+          print('🔄 分页失效处理 - 已替换所有数据，当前消息数: ${_messages.length}');
+        } else if (isLoadMore) {
+          // ✅ 正常加载更多：追加到列表末尾（因为是reverse: true，末尾对应视觉上的顶部/旧消息端）
+          _messages.addAll(newMessages);
+          
+          // ✅ 更新当前页码为实际请求的页码+1
           _currentPage = pageNumToRequest + 1;
           
           print('📥 加载更多完成 - 新消息数: ${newMessages.length}, 总消息数: ${_messages.length}');
@@ -291,7 +292,7 @@ class _ChatPageState extends State<ChatPage> {
         _isLoadingMore = false;
         
         // ✅ 仅在首次加载时设置滚动标记
-        if (!isLoadMore) {
+        if (!isLoadMore && !shouldReplaceAll) {
           _shouldScrollToBottom = true;
         }
       });
@@ -360,8 +361,12 @@ class _ChatPageState extends State<ChatPage> {
           updatedTime: DateTime.now(),
         ));
         
+        // ✅ 关键修复：插入新消息后，标记分页状态已失效
+        _isPageStateInvalidated = true;
+        
         print('   当前本地消息数: ${_messages.length}');
         print('   临时消息ID: $tempId');
+        print('   分页状态已标记为失效');
       });
 
       // 滚动到底部
