@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import '../models/auth_models.dart';
 import '../services/chat_service.dart';
@@ -1259,16 +1260,76 @@ class _ChatPageState extends State<ChatPage> {
                                                 ),
                                               ],
                                             ),
-                                            child: Text(
-                                              message.content,
-                                              style: TextStyle(
-                                                color: isUser
-                                                    ? Colors.white
-                                                    : Colors.black87,
-                                                fontSize: 15,
-                                                height: 1.5, // ✅ 增加行高
-                                              ),
-                                            ),
+                                            child: isUser
+                                                ? Text(
+                                                    message.content,
+                                                    style: TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 15,
+                                                      height: 1.5, // ✅ 增加行高
+                                                    ),
+                                                  )
+                                                : MarkdownBody(
+                                                    data: message.content,
+                                                    styleSheet: MarkdownStyleSheet(
+                                                      p: TextStyle(
+                                                        color: Colors.black87,
+                                                        fontSize: 15,
+                                                        height: 1.5,
+                                                      ),
+                                                      h1: TextStyle(
+                                                        color: Colors.black87,
+                                                        fontSize: 20,
+                                                        fontWeight: FontWeight.bold,
+                                                        height: 1.4,
+                                                      ),
+                                                      h2: TextStyle(
+                                                        color: Colors.black87,
+                                                        fontSize: 18,
+                                                        fontWeight: FontWeight.bold,
+                                                        height: 1.4,
+                                                      ),
+                                                      h3: TextStyle(
+                                                        color: Colors.black87,
+                                                        fontSize: 16,
+                                                        fontWeight: FontWeight.bold,
+                                                        height: 1.4,
+                                                      ),
+                                                      strong: TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                        color: Colors.black87,
+                                                      ),
+                                                      em: TextStyle(
+                                                        fontStyle: FontStyle.italic,
+                                                        color: Colors.black87,
+                                                      ),
+                                                      code: TextStyle(
+                                                        backgroundColor: Colors.grey.shade200,
+                                                        color: const Color(0xFF80CBC4),
+                                                        fontSize: 14,
+                                                      ),
+                                                      codeblockDecoration: BoxDecoration(
+                                                        color: Colors.grey.shade100,
+                                                        borderRadius: BorderRadius.circular(8),
+                                                      ),
+                                                      blockquote: TextStyle(
+                                                        color: Colors.grey.shade600,
+                                                        fontStyle: FontStyle.italic,
+                                                      ),
+                                                      blockquoteDecoration: BoxDecoration(
+                                                        border: Border(
+                                                          left: BorderSide(
+                                                            color: const Color(0xFF80CBC4),
+                                                            width: 4,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      listBullet: TextStyle(
+                                                        color: const Color(0xFF80CBC4),
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ),
                                           ),
                                         ),
                                       );
@@ -1297,16 +1358,20 @@ class _ChatPageState extends State<ChatPage> {
                                 ],
                               ),
                               child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center, // ✅ 垂直居中对齐
+                                crossAxisAlignment: CrossAxisAlignment.end, // ✅ 底部对齐，适配多行输入
                                 children: [
                                   Expanded(
-                                    child: SizedBox(
-                                      height: 50, // ✅ 固定输入框高度
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        minHeight: 50,
+                                        maxHeight: 150, // ✅ 最大高度限制
+                                      ),
                                       child: TextField(
                                         controller: _messageController,
                                         enabled: !_isWaitingForAI, // ✅ 等待AI回复时禁用输入
-                                        maxLines: 1, // ✅ 强制单行
+                                        maxLines: null, // ✅ 自动扩展行数
                                         minLines: 1,
+                                        keyboardType: TextInputType.multiline, // ✅ 支持多行键盘
                                         decoration: InputDecoration(
                                           hintText: _isWaitingForAI ? 'AI正在回复中...' : '输入消息...', // ✅ 动态提示文字
                                           hintStyle: TextStyle(
@@ -1321,13 +1386,13 @@ class _ChatPageState extends State<ChatPage> {
                                               ),
                                           border: OutlineInputBorder(
                                             borderRadius: BorderRadius.circular(
-                                              24,
+                                              16, // ✅ 调整圆角适配多行
                                             ),
                                             borderSide: BorderSide.none,
                                           ),
                                           focusedBorder: OutlineInputBorder(
                                             borderRadius: BorderRadius.circular(
-                                              24,
+                                              16,
                                             ),
                                             borderSide: const BorderSide(
                                               color: Color(0xFF80CBC4),
@@ -1469,16 +1534,20 @@ class _ChatPageState extends State<ChatPage> {
             ],
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end, // ✅ 底部对齐，适配多行输入
             children: [
               Expanded(
-                child: SizedBox(
-                  height: 50,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: 50,
+                    maxHeight: 150, // ✅ 最大高度限制
+                  ),
                   child: TextField(
                     controller: _messageController,
                     enabled: !_isWaitingForAI, // ✅ 等待AI回复时禁用输入
-                    maxLines: 1,
+                    maxLines: null, // ✅ 自动扩展行数
                     minLines: 1,
+                    keyboardType: TextInputType.multiline, // ✅ 支持多行键盘
                     decoration: InputDecoration(
                       hintText: _isWaitingForAI ? 'AI正在回复中...' : '输入消息...', // ✅ 动态提示文字
                       hintStyle: TextStyle(
@@ -1491,11 +1560,11 @@ class _ChatPageState extends State<ChatPage> {
                         vertical: 14,
                       ),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(16), // ✅ 调整圆角适配多行
                         borderSide: BorderSide.none,
                       ),
                       focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(16),
                         borderSide: const BorderSide(
                           color: Color(0xFF80CBC4),
                           width: 2,
@@ -1719,9 +1788,5 @@ class _ChatPageState extends State<ChatPage> {
         ),
       ],
     );
-  }
-
-  Widget _buildEmptyState() {
-    return const Center(child: Text('选择一个会话或创建新会话'));
   }
 }
