@@ -85,9 +85,7 @@ class _ProfilePageState extends State<ProfilePage> with AutomaticKeepAliveClient
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('退出失败: $e'), backgroundColor: Colors.red),
-          );
+          _showError('退出失败: $e');
         }
       }
     }
@@ -146,9 +144,7 @@ class _ProfilePageState extends State<ProfilePage> with AutomaticKeepAliveClient
               // 验证逻辑
               if (field == '昵称') {
                 if (value.isEmpty || value.length < 2 || value.length > 20) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('昵称长度需在2-20字符之间')),
-                  );
+                  _showError('昵称长度需在2-20字符之间');
                   return;
                 }
               } else if (field == '邮箱') {
@@ -156,17 +152,13 @@ class _ProfilePageState extends State<ProfilePage> with AutomaticKeepAliveClient
                     !RegExp(
                       r'^[\w-]+(\.[\w-]+)*@[\w-]+(\.[\w-]+)+$',
                     ).hasMatch(value)) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('邮箱格式不正确')));
+                  _showError('邮箱格式不正确');
                   return;
                 }
               } else if (field == '手机号') {
                 if (value.isNotEmpty &&
                     !RegExp(r'^1[3-9]\d{9}$').hasMatch(value)) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('手机号格式不正确')));
+                  _showError('手机号格式不正确');
                   return;
                 }
               }
@@ -190,21 +182,11 @@ class _ProfilePageState extends State<ProfilePage> with AutomaticKeepAliveClient
                 if (mounted) {
                   Navigator.pop(context);
                   _loadUserInfo();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('更新成功'),
-                      backgroundColor: Color(0xFF80CBC4),
-                    ),
-                  );
+                  _showMessage('更新成功');
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('更新失败: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
+                  _showError('更新失败: $e');
                 }
               }
             },
@@ -218,6 +200,68 @@ class _ProfilePageState extends State<ProfilePage> with AutomaticKeepAliveClient
             child: const Text('保存'),
           ),
         ],
+      ),
+    );
+  }
+
+  /// ✅ 显示成功消息（带防重复机制）
+  void _showMessage(String message) {
+    if (!mounted) return;
+    
+    // 先清除之前的SnackBar，避免重复显示
+    ScaffoldMessenger.of(context).clearSnackBars();
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: const Color(0xFF80CBC4),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// ✅ 显示错误消息（带防重复机制）
+  void _showError(String message) {
+    if (!mounted) return;
+    
+    // 先清除之前的SnackBar，避免重复显示
+    ScaffoldMessenger.of(context).clearSnackBars();
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFFE57373),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 3),
+        action: SnackBarAction(
+          label: '关闭',
+          textColor: Colors.white,
+          onPressed: () {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          },
+        ),
       ),
     );
   }

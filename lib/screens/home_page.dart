@@ -67,6 +67,15 @@ class _HomePageState extends State<HomePage> {
 
   void _onRefreshSignal() {
     if (mounted) {
+      // ✅ 每次进入账单页面，先将时间设置为当前月份
+      final now = DateTime.now();
+      final currentMonth = DateTime(now.year, now.month);
+      
+      setState(() {
+        _selectedMonth = currentMonth;
+      });
+      
+      // ✅ 然后调用接口刷新账单
       _loadBills();
     }
   }
@@ -471,22 +480,60 @@ class _HomePageState extends State<HomePage> {
 
   void _showMessage(String message) {
     if (!mounted) return;
+    
+    // ✅ 先清除之前的SnackBar，避免重复显示
+    ScaffoldMessenger.of(context).clearSnackBars();
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
         backgroundColor: const Color(0xFF80CBC4),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
 
   void _showError(String message) {
     if (!mounted) return;
+    
+    // ✅ 先清除之前的SnackBar，避免重复显示
+    ScaffoldMessenger.of(context).clearSnackBars();
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFFE57373),
         behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.red,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 3),
+        action: SnackBarAction(
+          label: '关闭',
+          textColor: Colors.white,
+          onPressed: () {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          },
+        ),
       ),
     );
   }

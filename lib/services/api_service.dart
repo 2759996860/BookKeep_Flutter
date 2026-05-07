@@ -591,18 +591,30 @@ class ApiService {
       
       // 检查是否是401错误
       if (response.statusCode == 401) {
-        print('收到401响应，尝试刷新Token...');
+        print('🔄 收到401响应，尝试刷新Token...');
         
         // 尝试刷新Token
-        final refreshSuccess = await handleUnauthorized();
+        final refreshSuccess = await refreshToken();
         
         if (refreshSuccess) {
           // 刷新成功，重试原请求
-          print('Token刷新成功，重试原请求...');
+          print('✅ Token刷新成功，重试原请求...');
           final retryResponse = await requestFunc();
+          
+          // ✅ 关键修复：如果重试仍然401，说明RefreshToken也失效了
+          if (retryResponse.statusCode == 401) {
+            print('❌ 重试后仍为401，RefreshToken已失效，跳转到登录页');
+            await clearTokens();
+            _navigateToLogin();
+            throw Exception('登录已过期，请重新登录');
+          }
+          
           return retryResponse;
         } else {
-          // 刷新失败，抛出异常
+          // 刷新失败，清除Token并跳转到登录页
+          print('❌ Token刷新失败，清除本地Token并跳转到登录页');
+          await clearTokens();
+          _navigateToLogin();
           throw Exception('登录已过期，请重新登录');
         }
       }

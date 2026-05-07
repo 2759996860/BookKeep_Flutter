@@ -31,6 +31,9 @@ class _ChatPageState extends State<ChatPage> {
   bool _isPageStateInvalidated = false; // ✅ 标记分页状态是否已失效（发送新消息后）
   bool _isWaitingForAI = false; // ✅ 标记是否正在等待AI回复
   
+  // ✅ 流式更新计数器，用于强制MarkdownBody重新渲染
+  int _streamUpdateCounter = 0;
+  
   TextEditingController _messageController = TextEditingController();
   ScrollController _scrollController = ScrollController();
 
@@ -152,10 +155,9 @@ class _ChatPageState extends State<ChatPage> {
         _conversations = conversations;
         _isLoading = false;
 
-        // ✅ 自动选择更新时间最新的会话（仅在首次加载且未选择会话时）
+        // ✅ 自动选择第一个会话（仅在首次加载且未选择会话时）
         if (_conversations.isNotEmpty && _currentConversationId == null) {
-          // 按更新时间倒序排序，取第一个
-          _conversations.sort((a, b) => b.updatedTime.compareTo(a.updatedTime));
+          // 使用后端返回的默认顺序，选择第一个会话
           _currentConversationId = _conversations.first.id;
           print('自动选择会话: $_currentConversationId');
         } else if (_conversations.isEmpty) {
@@ -431,6 +433,7 @@ class _ChatPageState extends State<ChatPage> {
           
           setState(() {
             assistantResponse += content;
+            _streamUpdateCounter++; // ✅ 每次更新递增计数器
             
             if (!hasAddedAssistantMessage) {
               _messages.insert(0, ChatMessage(
@@ -446,15 +449,19 @@ class _ChatPageState extends State<ChatPage> {
               hasAddedAssistantMessage = true;
             } else {
               if (_messages.isNotEmpty) {
-                _messages[0] = ChatMessage(
-                  id: _messages[0].id,
+                // ✅ 关键修复：创建全新的列表引用，确保ListView检测到变化
+                final updatedMessages = List<ChatMessage>.from(_messages);
+                updatedMessages[0] = ChatMessage(
+                  id: updatedMessages[0].id,
                   conversationId: conversationId,
                   messageType: 'assistant',
                   content: assistantResponse,
-                  sortOrder: _messages[0].sortOrder,
-                  createdTime: _messages[0].createdTime,
+                  sortOrder: updatedMessages[0].sortOrder,
+                  createdTime: updatedMessages[0].createdTime,
                   updatedTime: DateTime.now(),
                 );
+                _messages.clear();
+                _messages.addAll(updatedMessages);
               }
             }
           });
@@ -730,21 +737,61 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _showMessage(String message) {
+    if (!mounted) return;
+    
+    // ✅ 先清除之前的SnackBar，避免重复显示
+    ScaffoldMessenger.of(context).clearSnackBars();
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: const Color(0xFF80CBC4),
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
 
   void _showError(String message) {
+    if (!mounted) return;
+    
+    // ✅ 先清除之前的SnackBar，避免重复显示
+    ScaffoldMessenger.of(context).clearSnackBars();
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFFE57373),
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 3),
+        action: SnackBarAction(
+          label: '关闭',
+          textColor: Colors.white,
+          onPressed: () {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          },
+        ),
       ),
     );
   }
@@ -806,7 +853,10 @@ class _ChatPageState extends State<ChatPage> {
             color: const Color(0xFF80CBC4),
           ),
           onPressed: () {
-            // ✅ 点击时只切换显示/隐藏状态，不重复加载数据
+            // ✅ 点击展开时重新加载会话列表，保持后端默认顺序
+            if (!_isSidebarOpen) {
+              _loadConversations();
+            }
             setState(() {
               _isSidebarOpen = !_isSidebarOpen;
             });
@@ -1270,7 +1320,9 @@ class _ChatPageState extends State<ChatPage> {
                                                     ),
                                                   )
                                                 : MarkdownBody(
+                                                    key: ValueKey('md_${message.id}_$_streamUpdateCounter'), // ✅ 使用流式更新计数器，每次内容变化都强制重新渲染
                                                     data: message.content,
+                                                    selectable: true, // ✅ 允许选择文本
                                                     styleSheet: MarkdownStyleSheet(
                                                       p: TextStyle(
                                                         color: Colors.black87,

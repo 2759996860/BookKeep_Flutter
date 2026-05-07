@@ -394,7 +394,8 @@ class ChatService {
 
   static Stream<SseEvent> streamChat(StreamChatRequest request) async* {
     try {
-      final token = await ApiService.getAccessToken();
+      String? token = await ApiService.getAccessToken();
+      
       if (token == null || token.isEmpty) {
         throw Exception('未登录');
       }
@@ -416,10 +417,72 @@ class ChatService {
 
       print('流式对话响应状态码: ${response.statusCode}');
 
+      // ✅ 关键修复：如果返回401，尝试刷新Token后重试
+      if (response.statusCode == 401) {
+        print('🔄 ChatService: SSE流检测到401错误，尝试刷新Token...');
+        
+        final refreshSuccess = await ApiService.refreshToken();
+        
+        if (refreshSuccess) {
+          print('✅ ChatService: Token刷新成功，重新发起SSE请求...');
+          
+          // 获取新Token
+          token = await ApiService.getAccessToken();
+          
+          if (token == null || token.isEmpty) {
+            throw Exception('Token刷新后仍为空');
+          }
+          
+          // 重新创建请求
+          final retryHttpRequest = http.Request('POST', url);
+          retryHttpRequest.headers.addAll({
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          });
+          retryHttpRequest.body = jsonEncode(request.toJson());
+          
+          final retryResponse = await client.send(retryHttpRequest);
+          
+          print('📊 重试结果 - 状态码: ${retryResponse.statusCode}');
+          
+          if (retryResponse.statusCode == 401) {
+            // 如果重试仍然401，说明RefreshToken也失效了
+            print('❌ ChatService: 重试后仍为401，RefreshToken已失效');
+            await ApiService.clearTokens();
+            _navigateToLogin();
+            throw Exception('登录已过期，请重新登录');
+          }
+          
+          // ✅ 使用yield*转发流
+          yield* _processSseStream(response: retryResponse, client: client);
+          return; // ✅ 转发完成后直接返回
+        } else {
+          // 刷新失败，清除Token并跳转到登录页
+          print('❌ ChatService: Token刷新失败，清除本地Token');
+          await ApiService.clearTokens();
+          _navigateToLogin();
+          throw Exception('登录已过期，请重新登录');
+        }
+      }
+
       if (response.statusCode != 200) {
         throw Exception('流式对话请求失败: ${response.statusCode}');
       }
 
+      // 处理正常的SSE流
+      yield* _processSseStream(response: response, client: client);
+    } catch (e) {
+      print('流式对话异常: $e');
+      rethrow;
+    }
+  }
+
+  /// ✅ 提取SSE流处理逻辑为独立方法
+  static Stream<SseEvent> _processSseStream({
+    required http.StreamedResponse response,
+    required http.Client client,
+  }) async* {
+    try {
       // ✅ 处理SSE流 - 支持metadata事件
       StringBuffer buffer = StringBuffer();
       String? currentEvent; // 当前事件类型
@@ -493,8 +556,16 @@ class ChatService {
       print('✅ SSE流已结束，共处理所有chunk');
       client.close();
     } catch (e) {
-      print('流式对话异常: $e');
+      print('SSE流处理异常: $e');
+      client.close();
       rethrow;
     }
+  }
+
+  /// ✅ 跳转到登录页面（供ChatService内部使用）
+  static void _navigateToLogin() {
+    // ChatService不直接处理导航，由ApiService统一处理
+    // 这里仅作为备用逻辑
+    print('⚠️ ChatService: 需要跳转到登录页，请确保ApiService已设置导航上下文');
   }
 }
